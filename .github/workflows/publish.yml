@@ -18,15 +18,10 @@ jobs:
         with:
           node-version: '24'
           registry-url: 'https://registry.npmjs.org'
-          cache: 'npm'
       - name: Enable Corepack and pnpm
         run: |
           corepack enable
-          corepack prepare pnpm@9.12.0 --activate
           pnpm -v
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 9
       - run: pnpm install --frozen-lockfile
       - run: pnpm run build
       - name: Verify CLI shebang
