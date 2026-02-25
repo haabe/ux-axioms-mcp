@@ -44,5 +44,5 @@ jobs:
         run: |
           test -f dist/scripts/mcp.js
           head -n1 dist/scripts/mcp.js | grep -Fx '#!/usr/bin/env node'
-      - run: pnpm test --if-present
+      - run: pnpm run --if-present test
       - run: npm publish --access public
