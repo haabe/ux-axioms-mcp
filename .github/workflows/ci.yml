@@ -15,6 +15,7 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: '24'
+          cache: 'npm'
       - name: Enable Corepack and pnpm
         run: |
           corepack enable
