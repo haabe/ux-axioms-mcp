@@ -1,0 +1,6 @@
+{
+  "riley": ["readability_vs_legibility", "fitts_law", "postels_law", "similarity"],
+  "alex": ["jakobs_law", "proximity", "continuity"],
+  "jordan": ["doherty_threshold", "the_labor_illusion", "fitts_law"]
+}
+

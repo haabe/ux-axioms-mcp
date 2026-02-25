@@ -1,0 +1,47 @@
+{
+  "name": "ux-axioms-mcp",
+  "version": "1.0.0",
+  "description": "UX Axioms Model Context Protocol Server",
+  "type": "module",
+  "main": "dist/src/index.js",
+  "bin": {
+    "ux-axioms-mcp": "dist/scripts/mcp.js"
+  },
+  "files": [
+    "dist",
+    "database",
+    "public",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@9.12.0",
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/src/index.js",
+    "start:stdio": "node dist/src/index.js --stdio",
+    "start:http": "node dist/src/index.js",
+    "cli": "node dist/scripts/cli.js",
+    "enrich": "npm run build && node dist/scripts/enrich-frontmatter.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.1",
+    "cors": "^2.8.5",
+    "express": "^4.18.2",
+    "gray-matter": "^4.0.3",
+    "dotenv": "^16.4.5",
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.11.0",
+    "typescript": "^5.3.3",
+    "ts-node": "^10.9.2"
+  }
+}

@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: 'pnpm'
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run lint --if-present
+      - run: pnpm run build
+      - name: Verify CLI shebang
+        run: |
+          test -f dist/scripts/mcp.js
+          head -n1 dist/scripts/mcp.js | grep -Fx '#!/usr/bin/env node'
+      - run: pnpm test --if-present
+

@@ -1,0 +1,7 @@
+{
+  "menu": ["hicks_law", "fitts_law"],
+  "form": ["proximity", "postels_law", "readability_vs_legibility"],
+  "loading": ["doherty_threshold", "the_labor_illusion"],
+  "settings": ["hicks_law", "jakobs_law"]
+}
+

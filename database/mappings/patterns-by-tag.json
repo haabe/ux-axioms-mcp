@@ -1,0 +1,6 @@
+{
+  "navigation": ["tabs", "drawer", "topnav"],
+  "forms": ["label-input", "validation"],
+  "loading": ["skeleton", "progress-indicator"]
+}
+

@@ -1,0 +1,8 @@
+{
+  "settings menu": ["hicks_law", "fitts_law"],
+  "loading state": ["doherty_threshold", "the_labor_illusion"],
+  "form": ["proximity", "postels_law", "readability_vs_legibility"],
+  "search": ["hicks_law", "von_restorff_effect"],
+  "onboarding": ["jakobs_law", "the_curse_of_knowledge"]
+}
+

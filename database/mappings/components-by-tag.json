@@ -1,0 +1,6 @@
+{
+  "navigation": ["menu", "nav"],
+  "forms": ["form", "input"],
+  "loading": ["spinner", "skeleton"]
+}
+

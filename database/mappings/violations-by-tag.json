@@ -1,0 +1,23 @@
+{
+  "accessibility": {
+    "common_violations": ["missing labels", "low contrast", "no focus state"],
+    "fix_strategies": ["add label/aria", "increase contrast", "ensure focus styles"]
+  },
+  "forms": {
+    "common_violations": ["unclear labels", "poor grouping", "missing validation"],
+    "fix_strategies": ["associate label with input", "group related fields", "provide validation messages"]
+  },
+  "navigation": {
+    "common_violations": ["too many choices", "nonstandard placement"],
+    "fix_strategies": ["group items", "use common placement"]
+  },
+  "loading": {
+    "common_violations": ["no feedback under load"],
+    "fix_strategies": ["show skeleton/spinner", "optimistic UI"]
+  },
+  "performance": {
+    "common_violations": ["slow response", "janky transitions"],
+    "fix_strategies": ["budget < 400ms for feedback", "use GPU-accelerated transitions"]
+  }
+}
+

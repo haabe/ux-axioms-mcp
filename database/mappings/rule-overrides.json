@@ -1,0 +1,26 @@
+{
+  "fitts_law": {
+    "category": "cognitive_psychology_and_behavior",
+    "evidence_level": "established",
+    "tags": ["motor-control", "interaction", "targets"],
+    "patterns": ["buttons", "links"],
+    "common_violations": ["targets too small", "sparse hit area"],
+    "fix_strategies": ["ensure 44x44 css px", "increase padding/margins"]
+  },
+  "hicks_law": {
+    "category": "cognitive_psychology_and_behavior",
+    "evidence_level": "established",
+    "tags": ["decision-making", "navigation", "menus"],
+    "patterns": ["settings", "menus"],
+    "common_violations": ["too many top-level choices"],
+    "fix_strategies": ["group options", "progressive disclosure"]
+  },
+  "jakobs_law": {
+    "category": "cognitive_psychology_and_behavior",
+    "evidence_level": "established",
+    "tags": ["conventions", "familiarity"],
+    "common_violations": ["novel navigation placement"],
+    "fix_strategies": ["use familiar patterns"]
+  }
+}
+

@@ -1,0 +1,49 @@
+# Logs
+logs
+*.log
+*.log.*
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Node
+node_modules/
+.pnpm-store/
+
+# Builds and caches
+dist/
+build/
+.out/
+.tmp/
+.temp/
+.cache/
+.eslintcache
+tsconfig.tsbuildinfo
+.nyc_output/
+coverage/
+
+# Env files
+.env
+.env.local
+.env.*.local
+
+# Test artifacts (Playwright/Jest)
+test-results/
+playwright-report/
+blob-report/
+.vscode-test/
+
+# OS/Editor
+.DS_Store
+Thumbs.db
+.idea/
+*.swp
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+
+# Misc
+*.pid
+*.pid.lock
+*.seed
