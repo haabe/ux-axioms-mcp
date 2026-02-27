@@ -1,6 +1,6 @@
 {
   "name": "ux-axioms-mcp",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "UX Axioms Model Context Protocol Server",
   "type": "module",
   "main": "dist/src/index.js",
