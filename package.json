@@ -1,6 +1,6 @@
 {
   "name": "ux-axioms-mcp",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "UX Axioms Model Context Protocol Server",
   "type": "module",
   "main": "dist/src/index.js",
@@ -22,7 +22,7 @@
     "access": "public"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && chmod +x dist/scripts/mcp.js",
     "start": "node dist/src/index.js",
     "start:stdio": "node dist/src/index.js --stdio",
     "start:http": "node dist/src/index.js",
@@ -40,7 +40,7 @@
   "devDependencies": {
     "@types/cors": "^2.8.17",
     "@types/express": "^5.0.6",
-    "@types/node": "^25.3.0",
+    "@types/node": "^25.3.3",
     "ts-node": "^10.9.2",
     "typescript": "^5.3.3"
   }
