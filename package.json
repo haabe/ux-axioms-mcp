@@ -30,7 +30,7 @@
     "enrich": "npm run build && node dist/scripts/enrich-frontmatter.js"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.0.1",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "cors": "^2.8.5",
     "dotenv": "^17.4.1",
     "express": "^5.2.1",
