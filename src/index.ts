@@ -8,6 +8,15 @@ import cors from "cors";
 import express from "express";
 import { z } from "zod";
 import { loadAxioms } from "./loader.js";
+import { tokenize } from "./utils.js";
+
+// --- Constants ---
+
+const FITTS_MIN_PX = 44;
+const HICKS_MAX_CHOICES = 12;
+const MIN_FONT_SIZE_PX = 14;
+const DEFAULT_SUGGESTION_LIMIT = 20;
+const MAX_HTML_LENGTH = 500_000;
 
 // --- 1. Server Setup ---
 
@@ -23,9 +32,10 @@ const tagIndex = new Map<string, string[]>();
 for (const a of axioms) {
   for (const raw of a.tags || []) {
     const tag = String(raw).toLowerCase().trim();
-    const arr = tagIndex.get(tag) ?? [];
-    arr.push(a.id);
-    tagIndex.set(tag, arr);
+    if (!tagIndex.has(tag)) {
+      tagIndex.set(tag, []);
+    }
+    tagIndex.get(tag)!.push(a.id);
   }
 }
 
@@ -110,14 +120,6 @@ server.registerResource(
 
 type RankItem<T> = { item: T; score: number; why: string[] };
 
-function tokenize(text: string): string[] {
-  return text
-    .toLowerCase()
-    .replaceAll(/[^a-z0-9_\-\s]/g, " ")
-    .split(/\s+/)
-    .filter(Boolean);
-}
-
 function rankAxiomsByTerms(terms: string[]): RankItem<typeof axioms[number]>[] {
   const tset = new Set(terms.map((t) => t.toLowerCase()));
   const results: RankItem<typeof axioms[number]>[] = [];
@@ -171,6 +173,29 @@ function byIds(ids: string[]) {
   return axioms.filter((a) => set.has(a.id));
 }
 
+/** Collect seed values from mapping lookups for task/component/persona. */
+function collectMappingSeeds(opts: { task?: string; component?: string; persona?: string }): string[] {
+  const seedVals: string[] = [];
+  if (opts.persona && personaMap[opts.persona.toLowerCase()]) {
+    seedVals.push(...personaMap[opts.persona.toLowerCase()]);
+  }
+  if (opts.component && componentMap[opts.component.toLowerCase()]) {
+    seedVals.push(...componentMap[opts.component.toLowerCase()]);
+  }
+  if (opts.task) {
+    const k = Object.keys(taskMap).find((t) => opts.task!.toLowerCase().includes(t));
+    if (k) seedVals.push(...(taskMap[k] || []));
+  }
+  return seedVals;
+}
+
+/** Resolve seed values to axiom objects via id/tag lookup + related expansion. */
+function resolveSeeds(seedVals: string[]): typeof axioms {
+  const { ids, tags } = normalizeSeeds(seedVals);
+  const expandedIds = expandRelated([...ids, ...getIdsForTags(tags)], 1);
+  return expandedIds.map((id) => axiomById.get(id)).filter(Boolean) as typeof axioms;
+}
+
 // Tool: list_axioms (keyword filters title/content/tags)
 server.registerTool(
   "list_axioms",
@@ -209,14 +234,7 @@ server.registerTool(
   },
   async (args) => {
     const { task, component, persona, keywords, limit } = (args ?? {}) as { task?: string; component?: string; persona?: string; keywords?: string[]; limit?: number };
-    const seedVals: string[] = [];
-    if (persona && personaMap[persona.toLowerCase()]) seedVals.push(...personaMap[persona.toLowerCase()]);
-    if (component && componentMap[component.toLowerCase()]) seedVals.push(...componentMap[component.toLowerCase()]);
-    if (task) { const k = Object.keys(taskMap).find((t) => task.toLowerCase().includes(t)); if (k) seedVals.push(...(taskMap[k] || [])); }
-    const { ids: seedIds, tags: seedTags } = normalizeSeeds(seedVals);
-    const tagIds = getIdsForTags(seedTags);
-    const expandedIds = expandRelated([...seedIds, ...tagIds], 1);
-    const seedAxioms = expandedIds.map((id) => axiomById.get(id)).filter(Boolean) as typeof axioms;
+    const seedAxioms = resolveSeeds(collectMappingSeeds({ task, component, persona }));
     const termList = [task ?? "", component ?? "", ...(keywords ?? [])].filter(Boolean);
     const ranked = termList.length ? rankAxiomsByTerms(termList.flatMap(tokenize)) : [];
     const combined: RankItem<typeof axioms[number]>[] = [];
@@ -228,7 +246,7 @@ server.registerTool(
       if (!seen.has(r.item.id)) { combined.push(r); seen.add(r.item.id); }
     }
     combined.sort((a, b) => b.score - a.score);
-    const limited = typeof limit === "number" ? combined.slice(0, limit) : combined.slice(0, 20);
+    const limited = typeof limit === "number" ? combined.slice(0, limit) : combined.slice(0, DEFAULT_SUGGESTION_LIMIT);
     const output = limited.map((r) => ({ id: r.item.id, title: r.item.title, score: r.score, why: r.why }));
     return { content: [{ type: "text", text: JSON.stringify(output, null, 2) }] };
   },
@@ -240,12 +258,7 @@ server.registerTool(
   { title: "Recommend axioms for task", description: "Curated axioms for common tasks.", inputSchema: z.object({ task: z.string().min(1), persona: z.string().optional() }) },
   async (args) => {
     const { task, persona } = args as { task: string; persona?: string };
-    const vals: string[] = [];
-    const k = Object.keys(taskMap).find((t) => task.toLowerCase().includes(t));
-    if (k) vals.push(...(taskMap[k] || []));
-    if (persona && personaMap[persona.toLowerCase()]) vals.push(...personaMap[persona.toLowerCase()]);
-    const { ids, tags } = normalizeSeeds(vals);
-    const results = byIds([...ids, ...getIdsForTags(tags)]);
+    const results = resolveSeeds(collectMappingSeeds({ task, persona }));
     return { content: [{ type: "text", text: JSON.stringify(results, null, 2) }] };
   },
 );
@@ -256,9 +269,7 @@ server.registerTool(
   { title: "Prioritize axioms by persona", description: "Order axioms by persona focus.", inputSchema: z.object({ persona: z.string().min(1) }) },
   async (args) => {
     const { persona } = args as { persona: string };
-    const vals = personaMap[persona.toLowerCase()] || [];
-    const { ids, tags } = normalizeSeeds(vals);
-    const results = byIds([...ids, ...getIdsForTags(tags)]);
+    const results = resolveSeeds(collectMappingSeeds({ persona }));
     return { content: [{ type: "text", text: JSON.stringify(results, null, 2) }] };
   },
 );
@@ -269,26 +280,28 @@ server.registerTool(
   { title: "Analyze HTML for axiom violations", description: "Naive static checks for common issues.", inputSchema: z.object({ html: z.string().min(1), persona: z.string().optional() }) },
   async (args) => {
     const { html } = args as { html: string };
+    if (html.length > MAX_HTML_LENGTH) {
+      throw new Error(`HTML input too large (${html.length} chars). Maximum is ${MAX_HTML_LENGTH}.`);
+    }
     const findings: Array<{ axiom: string; violation: string; location?: string; fix: string }> = [];
     // Fitts's Law: look for elements with inline small sizes
-    // split the regex into separate width/height checks to reduce complexity
     const widthRegex = /<(button|a|input)([^>]*)style="[^"]*width\s*:\s*(\d+)px[^"]*"/gi;
     const heightRegex = /<(button|a|input)([^>]*)style="[^"]*height\s*:\s*(\d+)px[^"]*"/gi;
     for (const m of html.matchAll(widthRegex)) {
       const w = Number(m[3] || 0);
-      if (w && w < 44) {
-        findings.push({ axiom: "fitts_law", violation: "Clickable target width below 44px", location: m[0].slice(0,120), fix: "Increase minimum width to 44px." });
+      if (w && w < FITTS_MIN_PX) {
+        findings.push({ axiom: "fitts_law", violation: `Clickable target width below ${FITTS_MIN_PX}px`, location: m[0].slice(0,120), fix: `Increase minimum width to ${FITTS_MIN_PX}px.` });
       }
     }
     for (const m of html.matchAll(heightRegex)) {
       const h = Number(m[3] || 0);
-      if (h && h < 44) {
-        findings.push({ axiom: "fitts_law", violation: "Clickable target height below 44px", location: m[0].slice(0,120), fix: "Increase minimum height to 44px." });
+      if (h && h < FITTS_MIN_PX) {
+        findings.push({ axiom: "fitts_law", violation: `Clickable target height below ${FITTS_MIN_PX}px`, location: m[0].slice(0,120), fix: `Increase minimum height to ${FITTS_MIN_PX}px.` });
       }
     }
     // Hick's Law: naive — long nav/menu lists
     const liCount = (html.match(/<li[\s>]/gi) || []).length;
-    if (liCount > 12) {
+    if (liCount > HICKS_MAX_CHOICES) {
       findings.push({ axiom: "hicks_law", violation: `List may contain too many choices (${liCount})`, fix: "Group or chunk choices; add categorization or search." });
     }
     // Proximity/Labels: labels missing for inputs
@@ -306,11 +319,12 @@ server.registerTool(
       }
     }
     // Readability: tiny font-size inline
-    const smallFontCount = [...(html.matchAll(/font-size\s*:\s*(\d+)px/gi))]
-      .map((x) => Number(x[1]))
-      .filter((n) => n > 0 && n < 14)
-      .length;
-    if (smallFontCount > 0) findings.push({ axiom: "readability_vs_legibility", violation: "Inline font-size below 14px detected", fix: "Increase base text to 14–16px for desktop." });
+    let smallFontCount = 0;
+    for (const m of html.matchAll(/font-size\s*:\s*(\d+)px/gi)) {
+      const n = Number(m[1]);
+      if (n > 0 && n < MIN_FONT_SIZE_PX) smallFontCount++;
+    }
+    if (smallFontCount > 0) findings.push({ axiom: "readability_vs_legibility", violation: `Inline font-size below ${MIN_FONT_SIZE_PX}px detected`, fix: `Increase base text to ${MIN_FONT_SIZE_PX}–16px for desktop.` });
     return { content: [{ type: "text", text: JSON.stringify(findings, null, 2) }] };
   },
 );
@@ -321,7 +335,6 @@ server.registerTool(
   { title: "Generate axiom-driven spec", description: "Create a spec section using relevant axioms.", inputSchema: z.object({ task: z.string().min(1), context: z.string().optional(), persona: z.string().optional() }) },
   async (args) => {
     const { task, context, persona } = args as { task: string; context?: string; persona?: string };
-    // Reuse local function instead of self-calling tool to keep SDK-simple
     const ranked = rankAxiomsByTerms(tokenize(`${task} ${persona ?? ""}`));
     const suggested = ranked.slice(0, 5).map((r) => ({ id: r.item.id, title: r.item.title }));
     const parts = [
@@ -330,7 +343,7 @@ server.registerTool(
       `\nDesign Constraints (Axioms):`,
       ...suggested.map((s) => `- ${s.title} (id: ${s.id})`),
       `\nAcceptance Criteria:`,
-      `- No targets below 44x44px where touch interaction is expected (Fitts's Law).`,
+      `- No targets below ${FITTS_MIN_PX}x${FITTS_MIN_PX}px where touch interaction is expected (Fitts's Law).`,
       `- Limit top-level choices or group them meaningfully (Hick's Law).`,
       `- Inputs have associated labels (Proximity/Readability).`,
       `\nOpen Questions:`,
@@ -344,12 +357,12 @@ server.registerTool(
 // Tool: generate_tests — scaffold tests for frameworks
 server.registerTool(
   "generate_tests",
-  { title: "Generate axiom tests", description: "Create starter tests for Playwright/Jest-axe.", inputSchema: z.object({ framework: z.enum(["playwright", "jest-axe", "vitest"]).default("playwright"), context: z.string().optional(), persona: z.string().optional() }) },
+  { title: "Generate axiom tests", description: "Create starter tests for Playwright/Jest-axe.", inputSchema: z.object({ framework: z.enum(["playwright", "jest-axe", "vitest"]).default("playwright") }) },
   async (args) => {
     const { framework } = args as { framework: "playwright" | "jest-axe" | "vitest" };
     let out = "";
     if (framework === "playwright") {
-      out = `import { test, expect } from '@playwright/test';\n\n// Fitts's Law: ensure minimum hit area\ntest('targets meet minimum size', async ({ page }) => {\n  // TODO: adapt selector list\n  const handles = await page.$$('button, a, input[type=button], input[type=submit]');\n  for (const h of handles) {\n    const box = await h.boundingBox();\n    if (!box) continue;\n    expect(box.width).toBeGreaterThanOrEqual(44);\n    expect(box.height).toBeGreaterThanOrEqual(44);\n  }\n});\n`; }
+      out = `import { test, expect } from '@playwright/test';\n\n// Fitts's Law: ensure minimum hit area\ntest('targets meet minimum size', async ({ page }) => {\n  // TODO: adapt selector list\n  const handles = await page.$$('button, a, input[type=button], input[type=submit]');\n  for (const h of handles) {\n    const box = await h.boundingBox();\n    if (!box) continue;\n    expect(box.width).toBeGreaterThanOrEqual(${FITTS_MIN_PX});\n    expect(box.height).toBeGreaterThanOrEqual(${FITTS_MIN_PX});\n  }\n});\n`; }
     if (framework === "jest-axe") {
       out = `import { configureAxe } from 'jest-axe';\n// Example a11y test scaffold, integrate with your render pipeline\nconst axe = configureAxe();\n// TODO: render HTML and pass to axe\n// const results = await axe(html);\n// expect(results).toHaveNoViolations();\n`;
     }
@@ -391,15 +404,15 @@ async function main() {
 		const app = express();
 		const port = Number.parseInt(process.env.PORT || "3000", 10);
 
+		if (!Number.isFinite(port) || port < 1 || port > 65535) {
+			throw new Error(`Invalid PORT: "${process.env.PORT}". Must be 1–65535.`);
+		}
+
 		app.use(cors());
 		app.use(express.json());
 
 		// Simple API-key auth: supports multiple keys via VALID_API_KEYS (comma-separated)
-		const validKeys = (
-			process.env.VALID_API_KEYS ||
-			process.env.MCP_API_KEY ||
-			""
-		)
+		const validKeys = (process.env.VALID_API_KEYS || "")
 			.split(",")
 			.map((s) => s.trim())
 			.filter(Boolean);
@@ -456,20 +469,24 @@ async function main() {
 			"/mcp",
 			checkAuth,
 			async (req: ExpressLikeRequest, res: ExpressLikeResponse) => {
-				// Stateless transport per request
 				const transport = new StreamableHTTPServerTransport({
-					// Return JSON for simple request/response in demo UI
 					enableJsonResponse: true,
 				});
-				await server.connect(transport);
-				await transport.handleRequest(
-					req as unknown as NodeReq,
-					res as unknown as NodeRes,
-					(req as unknown as { body?: unknown }).body,
-				);
-				res.on("close", () => {
+				try {
+					await server.connect(transport);
+					await transport.handleRequest(
+						req as unknown as NodeReq,
+						res as unknown as NodeRes,
+						(req as unknown as { body?: unknown }).body,
+					);
+					res.on("close", () => {
+						transport.close();
+					});
+				} catch (error) {
 					transport.close();
-				});
+					console.error("MCP request error:", error);
+					res.status(500).send("Internal server error");
+				}
 			},
 		);
 
