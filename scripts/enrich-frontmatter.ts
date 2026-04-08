@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import matter from 'gray-matter';
+import { tokenize } from '../src/utils.js';
 
 type Front = {
   id?: string;
@@ -16,10 +17,6 @@ type Front = {
   common_violations?: string[];
   fix_strategies?: string[];
 };
-
-function tokenize(s: string): string[] {
-  return s.toLowerCase().replace(/[^a-z0-9_\-\s]/g, ' ').split(/\s+/).filter(Boolean);
-}
 
 const rulesDir = path.resolve(process.cwd(), 'database', 'rules');
 const overridesPath = path.resolve(process.cwd(), 'database', 'mappings', 'rule-overrides.json');
