@@ -2,8 +2,6 @@ name: Publish Package
 
 on:
   push:
-    tags:
-      - 'v*'
     branches:
       - main
   workflow_dispatch:
@@ -25,14 +23,6 @@ jobs:
           LOCAL=$(node -p "require('./package.json').version")
           echo "local_version=$LOCAL" >> "$GITHUB_OUTPUT"
 
-          # If triggered by a tag push, always publish
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-            echo "should_publish=true" >> "$GITHUB_OUTPUT"
-            echo "Tag push detected — will publish v$LOCAL"
-            exit 0
-          fi
-
-          # Otherwise compare to npm registry
           PUBLISHED=$(npm view ux-axioms-mcp version 2>/dev/null || echo "0.0.0")
           echo "Local: $LOCAL, Published: $PUBLISHED"
 
