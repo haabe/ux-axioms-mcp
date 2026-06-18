@@ -1,0 +1,48 @@
+name: Dependabot auto-merge
+
+# Runs AFTER the CI workflow finishes on a Dependabot branch. Because the main
+# ruleset requires a code-owner (@haabe) review, we approve the PR with
+# RELEASE_TOKEN (a PAT owned by @haabe) and enable auto-merge. GitHub then
+# squash-merges once ALL required checks (ci + Analyze) pass. The merge is
+# attributed to the token owner — a real user — so the resulting push to main
+# triggers publish.yml (a merge by the built-in GITHUB_TOKEN would not).
+#
+# workflow_run is used (not pull_request) so the job has access to repository
+# Actions secrets; pull_request runs triggered by Dependabot only see the
+# restricted Dependabot secret store.
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  automerge:
+    runs-on: ubuntu-latest
+    if: >-
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.actor.login == 'dependabot[bot]' &&
+      startsWith(github.event.workflow_run.head_branch, 'dependabot/')
+    steps:
+      - name: Approve as code owner and enable auto-merge
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          REPO: ${{ github.repository }}
+          BRANCH: ${{ github.event.workflow_run.head_branch }}
+        run: |
+          PR=$(gh pr list --repo "$REPO" --head "$BRANCH" --state open \
+            --json number --jq '.[0].number')
+          if [ -z "$PR" ]; then
+            echo "No open Dependabot PR for $BRANCH — nothing to do."
+            exit 0
+          fi
+          echo "Approving and enabling auto-merge for PR #$PR ($BRANCH)"
+          # Re-approve each run: a stale-dismissing rebase push triggers a new
+          # CI run, which re-enters this workflow and re-approves.
+          gh pr review "$PR" --repo "$REPO" --approve \
+            || echo "Approval skipped (already approved)."
+          gh pr merge "$PR" --repo "$REPO" --squash --auto --delete-branch
