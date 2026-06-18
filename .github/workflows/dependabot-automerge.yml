@@ -1,0 +1,38 @@
+name: Dependabot auto-merge
+
+# Runs AFTER the CI workflow finishes. If CI passed on a Dependabot branch,
+# squash-merge the PR. The merge is done with RELEASE_TOKEN (a PAT) rather than
+# the default GITHUB_TOKEN so the resulting push to main actually triggers
+# publish.yml — pushes made by GITHUB_TOKEN do not trigger other workflows.
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  automerge:
+    runs-on: ubuntu-latest
+    if: >-
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.actor.login == 'dependabot[bot]' &&
+      startsWith(github.event.workflow_run.head_branch, 'dependabot/')
+    steps:
+      - name: Merge the Dependabot PR
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          REPO: ${{ github.repository }}
+          BRANCH: ${{ github.event.workflow_run.head_branch }}
+        run: |
+          PR=$(gh pr list --repo "$REPO" --head "$BRANCH" --state open \
+            --json number --jq '.[0].number')
+          if [ -z "$PR" ]; then
+            echo "No open Dependabot PR for $BRANCH — nothing to merge."
+            exit 0
+          fi
+          echo "Merging PR #$PR ($BRANCH)"
+          gh pr merge "$PR" --repo "$REPO" --squash --delete-branch

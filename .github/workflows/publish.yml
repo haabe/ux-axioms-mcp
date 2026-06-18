@@ -6,40 +6,25 @@ on:
       - main
   workflow_dispatch:
 
+# Never run two releases at once — a queued run would bump on top of an
+# in-flight one and race the npm publish.
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
 permissions:
   id-token: write
   contents: write
 
 jobs:
-  check-version:
-    runs-on: ubuntu-latest
-    outputs:
-      should_publish: ${{ steps.version-check.outputs.should_publish }}
-      local_version: ${{ steps.version-check.outputs.local_version }}
-    steps:
-      - uses: actions/checkout@v6
-      - id: version-check
-        run: |
-          LOCAL=$(node -p "require('./package.json').version")
-          echo "local_version=$LOCAL" >> "$GITHUB_OUTPUT"
-
-          PUBLISHED=$(npm view ux-axioms-mcp version 2>/dev/null || echo "0.0.0")
-          echo "Local: $LOCAL, Published: $PUBLISHED"
-
-          if [ "$LOCAL" = "$PUBLISHED" ]; then
-            echo "should_publish=false" >> "$GITHUB_OUTPUT"
-            echo "Version unchanged — skipping publish"
-          else
-            echo "should_publish=true" >> "$GITHUB_OUTPUT"
-            echo "New version detected — will publish v$LOCAL"
-          fi
-
   publish:
-    needs: check-version
-    if: needs.check-version.outputs.should_publish == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          # Need a real ref (not detached HEAD) so we can push the bump back.
+          ref: main
+          fetch-depth: 0
       - uses: actions/setup-node@v6
         with:
           node-version: '24'
@@ -70,14 +55,12 @@ jobs:
           test -f dist/scripts/mcp.js
           head -n1 dist/scripts/mcp.js | grep -Fx '#!/usr/bin/env node'
       - run: pnpm run --if-present test
-      - name: Create git tag if missing
+      - name: Bump patch version, commit and tag
         run: |
-          VERSION=${{ needs.check-version.outputs.local_version }}
-          if ! git rev-parse "v$VERSION" >/dev/null 2>&1; then
-            git tag "v$VERSION"
-            git push origin "v$VERSION"
-            echo "Created and pushed tag v$VERSION"
-          else
-            echo "Tag v$VERSION already exists"
-          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          # Creates the commit + vX.Y.Z tag. The default GITHUB_TOKEN push does
+          # not re-trigger workflows, and [skip ci] guards self-hosted runners too.
+          npm version patch -m "chore: release v%s [skip ci]"
+          git push --follow-tags origin HEAD:main
       - run: npm publish --access public
