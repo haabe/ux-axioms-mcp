@@ -1,42 +1,27 @@
 name: Publish Package
 
+# Publishes on every push to main. The new version is derived from what is
+# already on npm (patch + 1), set in the working tree only, and shipped as a
+# git TAG + npm release. We deliberately do NOT commit the bump back to main:
+# the branch ruleset requires a reviewed PR for that, and tags are not covered
+# by it. npm is the source of truth for the version, so package.json's version
+# field on main is allowed to lag.
 on:
   push:
     branches:
       - main
   workflow_dispatch:
 
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
 permissions:
-  id-token: write
-  contents: write
+  id-token: write   # OIDC trusted publishing to npm
+  contents: write   # push the release tag
 
 jobs:
-  check-version:
-    runs-on: ubuntu-latest
-    outputs:
-      should_publish: ${{ steps.version-check.outputs.should_publish }}
-      local_version: ${{ steps.version-check.outputs.local_version }}
-    steps:
-      - uses: actions/checkout@v6
-      - id: version-check
-        run: |
-          LOCAL=$(node -p "require('./package.json').version")
-          echo "local_version=$LOCAL" >> "$GITHUB_OUTPUT"
-
-          PUBLISHED=$(npm view ux-axioms-mcp version 2>/dev/null || echo "0.0.0")
-          echo "Local: $LOCAL, Published: $PUBLISHED"
-
-          if [ "$LOCAL" = "$PUBLISHED" ]; then
-            echo "should_publish=false" >> "$GITHUB_OUTPUT"
-            echo "Version unchanged — skipping publish"
-          else
-            echo "should_publish=true" >> "$GITHUB_OUTPUT"
-            echo "New version detected — will publish v$LOCAL"
-          fi
-
   publish:
-    needs: check-version
-    if: needs.check-version.outputs.should_publish == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -44,7 +29,6 @@ jobs:
         with:
           node-version: '24'
           registry-url: 'https://registry.npmjs.org'
-          cache: 'npm'
       - name: Install and enable Corepack
         run: |
           npm install -g corepack
@@ -63,6 +47,18 @@ jobs:
           path: ${{ steps.pnpm-store.outputs.STORE_PATH }}
           key: ${{ runner.os }}-pnpm-store-${{ hashFiles('pnpm-lock.yaml') }}
           restore-keys: ${{ runner.os }}-pnpm-store-
+      - name: Compute next version (npm published patch + 1)
+        id: ver
+        run: |
+          PUBLISHED=$(npm view ux-axioms-mcp version 2>/dev/null || true)
+          if [ -z "$PUBLISHED" ]; then
+            PUBLISHED=$(node -p "require('./package.json').version")
+          fi
+          NEXT=$(node -e "const [a,b,c]=process.argv[1].split('.').map(Number); console.log(a+'.'+b+'.'+(c+1))" "$PUBLISHED")
+          echo "Published: $PUBLISHED -> Next: $NEXT"
+          echo "next=$NEXT" >> "$GITHUB_OUTPUT"
+      - name: Set version in working tree (not committed)
+        run: npm version "${{ steps.ver.outputs.next }}" --no-git-tag-version --allow-same-version
       - run: pnpm install --frozen-lockfile
       - run: pnpm run build
       - name: Verify CLI shebang
@@ -70,14 +66,16 @@ jobs:
           test -f dist/scripts/mcp.js
           head -n1 dist/scripts/mcp.js | grep -Fx '#!/usr/bin/env node'
       - run: pnpm run --if-present test
-      - name: Create git tag if missing
+      - name: Create and push release tag
         run: |
-          VERSION=${{ needs.check-version.outputs.local_version }}
-          if ! git rev-parse "v$VERSION" >/dev/null 2>&1; then
+          VERSION=${{ steps.ver.outputs.next }}
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if git rev-parse "v$VERSION" >/dev/null 2>&1; then
+            echo "Tag v$VERSION already exists — skipping tag push."
+          else
             git tag "v$VERSION"
             git push origin "v$VERSION"
-            echo "Created and pushed tag v$VERSION"
-          else
-            echo "Tag v$VERSION already exists"
+            echo "Pushed tag v$VERSION"
           fi
       - run: npm publish --access public
