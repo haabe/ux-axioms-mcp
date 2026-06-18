@@ -1,35 +1,34 @@
 name: Publish Package
 
+# Publishes on every push to main. The new version is derived from what is
+# already on npm (patch + 1), set in the working tree only, and shipped as a
+# git TAG + npm release. We deliberately do NOT commit the bump back to main:
+# the branch ruleset requires a reviewed PR for that, and tags are not covered
+# by it. npm is the source of truth for the version, so package.json's version
+# field on main is allowed to lag.
 on:
   push:
     branches:
       - main
   workflow_dispatch:
 
-# Never run two releases at once — a queued run would bump on top of an
-# in-flight one and race the npm publish.
 concurrency:
   group: publish
   cancel-in-progress: false
 
 permissions:
-  id-token: write
-  contents: write
+  id-token: write   # OIDC trusted publishing to npm
+  contents: write   # push the release tag
 
 jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-        with:
-          # Need a real ref (not detached HEAD) so we can push the bump back.
-          ref: main
-          fetch-depth: 0
       - uses: actions/setup-node@v6
         with:
           node-version: '24'
           registry-url: 'https://registry.npmjs.org'
-          cache: 'npm'
       - name: Install and enable Corepack
         run: |
           npm install -g corepack
@@ -48,6 +47,18 @@ jobs:
           path: ${{ steps.pnpm-store.outputs.STORE_PATH }}
           key: ${{ runner.os }}-pnpm-store-${{ hashFiles('pnpm-lock.yaml') }}
           restore-keys: ${{ runner.os }}-pnpm-store-
+      - name: Compute next version (npm published patch + 1)
+        id: ver
+        run: |
+          PUBLISHED=$(npm view ux-axioms-mcp version 2>/dev/null || true)
+          if [ -z "$PUBLISHED" ]; then
+            PUBLISHED=$(node -p "require('./package.json').version")
+          fi
+          NEXT=$(node -e "const [a,b,c]=process.argv[1].split('.').map(Number); console.log(a+'.'+b+'.'+(c+1))" "$PUBLISHED")
+          echo "Published: $PUBLISHED -> Next: $NEXT"
+          echo "next=$NEXT" >> "$GITHUB_OUTPUT"
+      - name: Set version in working tree (not committed)
+        run: npm version "${{ steps.ver.outputs.next }}" --no-git-tag-version --allow-same-version
       - run: pnpm install --frozen-lockfile
       - run: pnpm run build
       - name: Verify CLI shebang
@@ -55,12 +66,16 @@ jobs:
           test -f dist/scripts/mcp.js
           head -n1 dist/scripts/mcp.js | grep -Fx '#!/usr/bin/env node'
       - run: pnpm run --if-present test
-      - name: Bump patch version, commit and tag
+      - name: Create and push release tag
         run: |
+          VERSION=${{ steps.ver.outputs.next }}
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          # Creates the commit + vX.Y.Z tag. The default GITHUB_TOKEN push does
-          # not re-trigger workflows, and [skip ci] guards self-hosted runners too.
-          npm version patch -m "chore: release v%s [skip ci]"
-          git push --follow-tags origin HEAD:main
+          if git rev-parse "v$VERSION" >/dev/null 2>&1; then
+            echo "Tag v$VERSION already exists — skipping tag push."
+          else
+            git tag "v$VERSION"
+            git push origin "v$VERSION"
+            echo "Pushed tag v$VERSION"
+          fi
       - run: npm publish --access public
